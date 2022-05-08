@@ -48,6 +48,7 @@
     <Compile Include="CmdLine.cs" />
     <Compile Include="Models\Application.cs" />
     <Compile Include="Models\Build.cs" />
+    <Compile Include="Models\OutputFormat.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="biz\VeraCodeParser.cs" />

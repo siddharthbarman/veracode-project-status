@@ -17,6 +17,7 @@ Resources like html files, images file used by the utility are present here.
 You need:
 - Visual Studio with .NET Desktop development feature
   
+
 Just build "source\verastat.sln" using Visual Studio or MSBUILD.
 
 ### How to run
@@ -30,12 +31,13 @@ To learn more about configuring credentials, checkout the [official docs](https:
 You need to have .NET Framework 4.5 or above installed on your Windows
 machine.
 ```
-verastat -p VeraCodeProfile> -r ReportFilename -o FolderPath
+verastat -p <VeraCodeProfile> -r <ReportFilename> -o <FolderPath> -t <outputType>
 ```
 - -p: Specifies the profile in the VeraCode credentials file to use to authenticate
 - -r: Specifies the name of the report file, the filename will be appended with the current date
 - -o: Generates html file with status results in the folder specified
-  
+- -t: Specifies the output type, either csv (default) or html
+
 **Note:** You should run the utility from the same folder where it is located. The resources 
 folder must be present in the same folder where the verastat utility is present. 
 This folder is copied to the output folder when the  
