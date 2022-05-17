@@ -14,7 +14,7 @@ namespace vstat.biz
 			this.profile = profile;
 		}
 
-		public List<string> GetApplicationIds()
+		public List<ApplicationInfo> GetApplicationsInfo()
 		{			
 			string resultXml = UploadApi.GetAppList(true.ToString());			
 			return ParseApplicationResultsXml(resultXml);

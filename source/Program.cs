@@ -6,27 +6,40 @@ using System.Threading;
 using System.Threading.Tasks;
 using vstat.biz;
 using vstat.Models;
+using System.Linq;
 
 namespace vstat
 {
 	class Program
 	{
-		static List<Application> GetApplications(string profile, int maxProjects)
+		static List<Application> GetApplications(string profile, int maxProjects, IEnumerable<string> ignoredAppNames)
 		{
 			VeraCodeApi gen = new VeraCodeApi(profile);
-			List<string> appIds = gen.GetApplicationIds();
-			List<Application> apps = new List<Application>();			
+			List<ApplicationInfo> appInfos = gen.GetApplicationsInfo();
+
+			if (ignoredAppNames != null)
+			{
+				foreach (string ignoredAppName in ignoredAppNames)
+				{
+					ApplicationInfo toRemove = appInfos.Where(appInfo => appInfo.Name == ignoredAppName).FirstOrDefault();
+					if (toRemove != null)
+					{
+						Console.WriteLine("Ignoring: {0}", toRemove.Name);
+						appInfos.Remove(toRemove);
+					}
+				}
+			}
 			
+			List<Application> apps = new List<Application>();			
 			Console.Write("Retrieving projects progress: ");
 			int left = Console.CursorLeft;			
-			int count = 1;
+			int count = 0;
 			object _lock = new object();
 
-			ParallelLoopResult result = Parallel.ForEach(appIds, appId =>
+			ParallelLoopResult result = Parallel.ForEach(appInfos, appInfo =>
 			{
 				VeraCodeApi localGen = new VeraCodeApi(profile);
-
-				Application app = localGen.GetApplicationInfo(appId);
+				Application app = localGen.GetApplicationInfo(appInfo.Id);
 				lock (_lock)
 				{
 					apps.Add(app);
@@ -39,9 +52,9 @@ namespace vstat
 					app.Build = build;
 				}
 
-				int percent = count * 100 / appIds.Count;
+				int percent = count * 100 / appInfos.Count;
 				Console.CursorLeft = left;
-				Console.Write(string.Format("{0}%", percent));
+				Utils.ConsoleWrite(ConsoleColor.Green, "{0}%", percent);
 
 				if (count > maxProjects)
 				{
@@ -53,36 +66,44 @@ namespace vstat
 			return apps;
 		}
 
-		static void Help()
+		private static void Help()
 		{
 			Console.WriteLine("Generate VeraCode status reports for all projects.");
 			Console.WriteLine("Syntax:");
-			Console.WriteLine("vstat -p VeraCodeProfile -r ReportFilename -o FolderPath -i command-separated-list-of-projects");
+			Console.WriteLine("vstat -p VeraCodeProfile -r ReportFilename -o FolderPath -i ignore-projects");
 			Console.WriteLine("-p: Specifies the profile in the VeraCode credentials file to use to authenticate");
 			Console.WriteLine("-r: Specifies the name of the report file, the filename will be appended with the current date");
 			Console.WriteLine("-o: Generates html file with status results in the folder specified");
 			Console.WriteLine("-t: Specifies the output type, html and csv are accepted");
-			Console.WriteLine("-i: Ignore list");
+			Console.WriteLine("-i: optional, command separated list of projects to ignore");
 		}
+
+		
 	
-		static void GenerateReport(string profile, string folder, string reportName, int maxProjects, OutputFormat format)
+		static void GenerateReport(string profile, string folder, string reportName, int maxProjects, 
+			OutputFormat format, IEnumerable<string> ignoredProjects)
 		{
-			List<Application> apps = GetApplications(profile, maxProjects);
-			string reportFile = null;
+			string reportFile = (format == OutputFormat.CSV ? GetCSVReportFilePath(folder, reportName) : GetHTMLReportFilePath(folder, reportName));
+			if (!Utils.CheckFileIsWritable(reportFile))
+			{
+				throw new ApplicationException("Reportfile specified is not writable, it could be already in use.");
+			}
+
+			List<Application> apps = GetApplications(profile, maxProjects, ignoredProjects);
 			
 			if (format == OutputFormat.HTML)
-			{
-				reportFile = GenerateHTMLReport(apps, folder, reportName, maxProjects);
+			{				
+				GenerateHTMLReport(apps, reportFile, maxProjects);
 			}
 			else
 			{
-				reportFile = GenerateCSVReport(apps, folder, reportName, maxProjects);
+				GenerateCSVReport(apps, reportFile, maxProjects);
 			}
 
 			Console.WriteLine("Report has been saved to {0}", reportFile);
 		}
 
-		static string GenerateHTMLReport(List<Application> apps, string folder, string reportName, int maxProjects)
+		static void GenerateHTMLReport(List<Application> apps, string reportFile, int maxProjects)
 		{
 			StringBuilder sb = new StringBuilder();
 
@@ -107,11 +128,10 @@ namespace vstat
 				sb.AppendFormat(TABLE_ROW_TEMPLATE, app.Teams, app.Name, policyName, policyStatus, image);
 			}
 
-			string reportFile = WriteHTMLReport(folder, reportName, sb.ToString());
-			return reportFile;
+			WriteHTMLReport(reportFile, sb.ToString());			
 		}
 
-		static string GenerateCSVReport(List<Application> apps, string folder, string reportName, int maxProjects)
+		static void GenerateCSVReport(List<Application> apps, string reportFile, int maxProjects)
 		{			 
 			StringBuilder sb = new StringBuilder();
 
@@ -132,9 +152,8 @@ namespace vstat
 				sb.AppendLine(string.Format("\"{0}\",\"{1}\",\"{2}\",\"{3}\"", app.Teams, 
 					app.Name, policyName, policyStatus));
 			}
-
-			string reportFile = WriteCSVReport(folder, reportName, sb.ToString());
-			return reportFile;
+			
+			WriteCSVReport(reportFile, sb.ToString());			
 		}
 
 		static string GetHTMLReportFilePath(string folder, string reportName)
@@ -153,27 +172,25 @@ namespace vstat
 			return Path.Combine(folder, filename);
 		}
 
-		static string WriteHTMLReport(string folder, string reportName, string content)
+		static string WriteHTMLReport(string reportFile, string content)
 		{
 			string template = File.ReadAllText(TEMPLATE_HTML_FILE);
+			
 			template = template.Replace(VAR_TITLE, string.Format("SurveilX VeraCode Status as on {0}",
-				DateTime.Now.ToShortDateString()));
-			template = template.Replace(VAR_ROWS, content);
-			
-			string filePath = GetHTMLReportFilePath(folder, reportName);
-			File.WriteAllText(filePath, template);			
-			
-			File.Copy(PASS_IMAGE, Path.Combine(folder, PASS_IMAGE), true);
-			File.Copy(FAIL_IMAGE, Path.Combine(folder, FAIL_IMAGE), true);
+				DateTime.Now.ToShortDateString()));			
+			template = template.Replace(VAR_ROWS, content);			
+			string filePath = reportFile;
+
+			File.WriteAllText(filePath, template);						
+			File.Copy(PASS_IMAGE, Path.Combine(Path.GetDirectoryName(filePath), PASS_IMAGE), true);
+			File.Copy(FAIL_IMAGE, Path.Combine(Path.GetDirectoryName(filePath), FAIL_IMAGE), true);
 
 			return filePath;
 		}
 
-		static string WriteCSVReport(string folder, string reportName, string content)
-		{
-			string filePath = GetCSVReportFilePath(folder, reportName);
-			File.WriteAllText(filePath, content);
-			return filePath;
+		static void WriteCSVReport(string reportFile, string content)
+		{		
+			File.WriteAllText(reportFile, content);		
 		}
 
 		static void Main(string[] args)
@@ -188,14 +205,14 @@ namespace vstat
 			string profile = cmd.GetFlagValue(FLAG_PROFILE, null);
 			if (string.IsNullOrEmpty(profile))
 			{
-				Console.WriteLine("Veracode profile not specified!");
+				Utils.WriteLineError("Veracode profile not specified!");				
 				return;
 			}
 
 			string folder = cmd.GetFlagValue(FLAG_FOLDER, null);
 			if (string.IsNullOrEmpty(folder))
 			{
-				Console.WriteLine("Output folder not specified!");
+				Utils.WriteLineError("Output folder not specified!");
 				return;
 			}
 
@@ -204,7 +221,7 @@ namespace vstat
 
 			if (!Enum.TryParse<OutputFormat>(outputType, true, out format))
             {
-				Console.WriteLine("Invalid output format!");
+				Utils.WriteLineError("Invalid output format!");
 				return;
 			}
 
@@ -218,14 +235,34 @@ namespace vstat
 			}
 			else
 			{
-				Console.WriteLine("Invalid output forma.!");
+				Utils.WriteLineError("Invalid output format!");
 				return;
 			}
-
+						
+			string[] ignoredProjectList = ParseIgnoredProjects(cmd.GetFlagValue(FLAG_IGNORED_PROJECTS, null));			
 			string reportName = cmd.GetFlagValue(FLAG_REPORT_NAME, "veracode");
 			int maxProjects = cmd.GetFlagValue<int>(FLAG_MAX_PROJECTS, int.MaxValue);
 
-			GenerateReport(profile, folder, reportName, maxProjects, format);
+			try
+			{
+				GenerateReport(profile, folder, reportName, maxProjects, format, ignoredProjectList);
+			}
+			catch (Exception e)
+			{				
+				Utils.WriteLineError("Something went terribly wrong! Error: {0}", e.Message);				
+			}
+		}
+
+		private static string[] ParseIgnoredProjects(string ignoredProjects)
+		{
+			if (ignoredProjects == null)
+			{
+				return null;
+			}
+			else
+			{
+				return ignoredProjects.Split(',');
+			}			
 		}
 
 		private static readonly string FLAG_PROFILE = "p";
@@ -233,6 +270,7 @@ namespace vstat
 		private static readonly string FLAG_MAX_PROJECTS = "m";
 		private static readonly string FLAG_REPORT_NAME = "r";
 		private static readonly string FLAG_OUTPUT_TYPE = "t";
+		private static readonly string FLAG_IGNORED_PROJECTS = "i";
 
 		private static readonly string TABLE_ROW_TEMPLATE = @"				
 				<tr>

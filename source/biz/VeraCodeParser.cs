@@ -10,13 +10,13 @@ namespace vstat.biz
 {
 	public class VeraCodeParser
 	{	
-		public List<string> ParseApplicationResultsXml(string xml)
+		public List<ApplicationInfo> ParseApplicationResultsXml(string xml)
 		{
 			XmlDocument doc = GetXmlDocument(xml);
-			List<string> result = new List<string>();			
+			List<ApplicationInfo> result = new List<ApplicationInfo>();
 			foreach (XmlNode node in SelectNodes(doc, "//a:applist/a:app"))
 			{				
-				result.Add(node.Attributes["app_id"].Value);
+				result.Add(new ApplicationInfo(node.Attributes["app_id"].Value, node.Attributes["app_name"].Value));
 			}
 			return result;
 		}
