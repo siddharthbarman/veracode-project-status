@@ -57,11 +57,12 @@ namespace vstat
 		{
 			Console.WriteLine("Generate VeraCode status reports for all projects.");
 			Console.WriteLine("Syntax:");
-			Console.WriteLine("vstat -p VeraCodeProfile -r ReportFilename -o FolderPath");
+			Console.WriteLine("vstat -p VeraCodeProfile -r ReportFilename -o FolderPath -i command-separated-list-of-projects");
 			Console.WriteLine("-p: Specifies the profile in the VeraCode credentials file to use to authenticate");
 			Console.WriteLine("-r: Specifies the name of the report file, the filename will be appended with the current date");
 			Console.WriteLine("-o: Generates html file with status results in the folder specified");
 			Console.WriteLine("-t: Specifies the output type, html and csv are accepted");
+			Console.WriteLine("-i: Ignore list");
 		}
 	
 		static void GenerateReport(string profile, string folder, string reportName, int maxProjects, OutputFormat format)
